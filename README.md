@@ -6,6 +6,8 @@ This repository contains my end-to-end pipeline and final solution for the **IBM
 - Task: Predict the next **24 hours** of electricity consumption for residential/commercial buildings given the previous **168 hours**.  
 - Metric: **Mean Squared Error (MSE)**.  
 - Result: **4th place** overall.
+- Team: SmartWatt
+- Team Members: Suyog Jare, Chandresh Patel, Himanshu Sen
 
 ---
 
