@@ -127,13 +127,13 @@ Download instructions are on the Kaggle page above.
 
 ## 4) Results
 
-- Leaderboard: **4th place**.  
-- Model family: TTM-r2 with a compact trainable head/decoder (encoder remains frozen for speed and stability).  
+- Leaderboard: **4th place**.
+- Public LB MSE: 0.43486 and Private LB MSE: 0.41572
+- Model family: TTM-r2/r1 with a compact trainable head/decoder (encoder remains frozen for speed and stability).  
 - Observations:
   - Clean preprocessing and leak-safe handling of IDs strongly stabilized validation.
   - Simple MSE-only ensembling across seeds improved robustness on the hidden leaderboard.
 
-*(Fill in your public/private MSE if you’d like.)*
 
 ---
 
