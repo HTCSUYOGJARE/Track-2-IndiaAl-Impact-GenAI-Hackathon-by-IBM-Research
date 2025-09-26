@@ -48,15 +48,80 @@ Download instructions are on the Kaggle page above.
 > - Strict dtype control to avoid `object`→torch issues.
 
 ### 3.2 Modeling & Training (see `Final_submission.ipynb`)
-- **Backbone**: `ibm-granite/granite-timeseries-ttm-r2` via TSFM public toolkit.
-- **Horizon & Context**: `prediction_length=24`, `context_length=168`.
-- **Preprocessor**: TSFM `TimeSeriesPreprocessor` (per-series normalization handled internally).
-- **Fine-tuning schedule**:
-  - The notebook is set up for a **lightweight finetune** using HuggingFace `Trainer` with early stopping.
-  - Default seed is set (e.g., `SEED=79`). You can duplicate a cell with different seeds to produce multiple submissions.
-- **Submission**: predictions are written to `submission_seed_{SEED}_r2.csv`.
-- **(Optional) Ensembling**:
-  - There is commented code for **convex MSE-only blending** across per-seed submissions (simplex weights learned on validation; applied to test). Enable it if you generate multiple seed submissions.
+
+#### 1) Data → Features → Windows
+- Construct **192-step windows** per building/region with roles:  
+  - **Input:** 168 hours of history  
+  - **Target:** 24 hours forecast horizon  
+- Add **calendar features**: `hour`, `dayofweek`, `month`, and cyclic encodings (`hour_sin`, `hour_cos`).  
+- Encode **region** as one-hot using train-only categories (prevents leakage).  
+- Apply **median imputation** for missing numeric controls.  
+- Enforce **float32** to avoid silent `object → torch` casting errors.
+
+#### 2) Preprocessing
+- Use **TimeSeriesPreprocessor** (TSFM toolkit) for formatting series.  
+- Keep **TTM’s built-in scaler** active to handle per-series normalization internally.  
+- Pad/crop sequences to **checkpoint context length (CL=512)** using a custom collator:  
+  - Left-pad where required.  
+  - Mask padded values explicitly.  
+- **Recurrent Patch Transformer (RPT)** was tested but turned off after ablation (worse performance).
+
+#### 3) Modeling
+- Models used:  
+  - `TinyTimeMixerForPrediction` from  
+    - `ibm-granite/granite-timeseries-ttm-r1`  
+    - `ibm-granite/granite-timeseries-ttm-r2`  
+- Adjust channel counts to match dataset.  
+- Prune model head from checkpoint forecast length (FL) → 24 without altering backbone geometry.
+
+**Two-phase fine-tuning strategy:**
+- **Phase 1 (head-only training):**  
+  - Learning rate (`lr_head=1e-3`)  
+  - ~8 epochs, EarlyStopping on validation MSE  
+- **Phase 2 (decoder + head):**  
+  - Learning rates (`lr_head=8e-4`, `lr_dec=2e-4`)  
+  - Also tried (`6e-4` / `1.5e-4`)  
+  - ~20–30 epochs, warmup 7–10%  
+  - Dropout = 0.2 on head  
+- **Encoder kept frozen** (micro-unfreeze tested but not required for leaderboard gains).
+
+#### 4) Validation & Ensembling
+- Save **per-seed** validation predictions and test submissions.  
+- Perform **convex MSE blending** across seeds within each model family:  
+  - Simplex weights auto-downweight weak seeds.  
+- Perform **cross-family blending** between R1 and R2:  
+  - Again convex simplex blending on validation → applied to test.  
+- Horizon calibration was tried but removed since it improved offline NLL but worsened LB MSE.
+
+#### 5) Inference
+- Use **context-length–aware pad/crop**.  
+- Predict with trained models.  
+- Apply **inverse-scaling** via preprocessor stats.  
+- Clip outputs at ≥0.  
+- Write Kaggle submission files.
+
+---
+
+#### Challenges
+- **Normalization conflicts:** per-window vs global scaling fixed by relying on TTM’s internal scaler + strict dtype control.  
+- **Shape/context mismatches:** solved with left-padding to CL=512 and observed-value masking.  
+- **Seed stability & leakage:** ensured one-hot regions fitted only on train; early stopping on eval MSE.  
+- **Leaderboard sensitivity:** NLL-based calibration that helped offline hurt LB MSE → reverted to MSE-only blending.
+
+---
+
+#### Expected Impact
+- **Operational:** tighter day-ahead forecasts for chiller scheduling and load shifting; fewer false alarms.  
+- **Economic:** more accurate forecasting → actionable tariff-weighted scheduling, groundwork for daily ₹ and CO₂ accounting.  
+- **Scalability:** compact head/decoder, fast few-shot rollout across multiple buildings and regions.
+
+---
+
+#### What We Learned / Novelty
+- **Seed + family blending** matters: R1 and R2 errors are complementary; convex blending beats either alone (e.g., best public ~0.43486 vs single-family ~0.435–0.436).  
+- **RPT off > on** for this dataset/splits (kept off).  
+- **Preprocessing hygiene** (float32, leak-safe dummies) avoids silent degradation.  
+- **Simple > clever** for MSE leaderboard: horizon/region calibration improved NLL but worsened MSE, so was removed.
 
 ---
 
